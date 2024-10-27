@@ -1,7 +1,6 @@
-#Importamos librerias necesarias
-from pyspark.sql import SparkSession, functions as F
-
-# 1. Definir Sesión de Spark y Cargar Dataset
+# Importamos librerías necesarias
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 # Inicializa la sesión de Spark
 spark = SparkSession.builder.appName('Tarea3').getOrCreate()
@@ -9,83 +8,64 @@ spark = SparkSession.builder.appName('Tarea3').getOrCreate()
 # Define la ruta del archivo .csv en HDFS
 file_path = 'hdfs://localhost:9000/Tarea3/rows.csv'
 
-# Cargar dataset
-df = spark.read.format('csv').option('header','true').option('inferSchema', 'true').load(file_path)
+# Lee el archivo .csv
+df = spark.read.format('csv').option('header', 'true').option('inferSchema', 'true').load(file_path)
 
-# Verificar la estructura del dataset
+# Imprimimos el esquema
 df.printSchema()
 
-# 2. Exploración Inicial y Limpieza de Datos
+# 1. Conteo de las opciones en la columna 'calendario'
+print("Conteo de las opciones en la columna 'calendario':\n")
+df.groupBy('calendario').count().show()
 
-# Mostrar nombres de columnas
-print("Columnas originales:", df.columns)
+# 2. Conteo de los 5 tipos de 'propiedad_Planta_Fisica' más comunes
+print("Conteo de los 5 tipos de 'propiedad_Planta_Fisica' más comunes:\n")
+df.groupBy('propiedad_Planta_Fisica').count().orderBy('count', ascending=False).show(5)
 
-# Renombrar columnas, reemplazando espacios y caracteres especiales
-new_column_names = [col.replace(" ", "_").replace(".", "") for col in df.columns]
-df = df.toDF(*new_column_names)
+# 3. Relación entre 'nombreestablecimiento' con 'niveles' y 'idiomas'
+print("Relación entre 'nombreestablecimiento' con 'niveles' y 'idiomas':\n")
+df.select('nombreestablecimiento', 'niveles', 'idiomas').distinct().show(truncate=False)
 
-# Mostrar nombres de columnas después de renombrar
-print("Columnas renombradas:", df.columns)
+# 4. Conteo de 'tipo_Establecimiento' en relación con idiomas inglés y español
+print("Conteo de 'tipo_Establecimiento' con idiomas inglés y español:\n")
+df.filter(df.idiomas.isin('INGLÉS', 'ESPAÑOL'))\
+    .groupBy('tipo_Establecimiento', 'idiomas')\
+    .count()\
+    .show()
 
-# Convertir columnas "POBLACIÓN_DANE" y "INDICE" a tipos numéricos
-df = df.withColumn("POBLACIÓN_DANE", F.col("POBLACIÓN_DANE").cast("float"))
-df = df.withColumn("INDICE", F.col("INDICE").cast("float"))
+# 5. Relación entre 'nombreestablecimiento' y 'jornadas'
+print("Relación entre 'nombreestablecimiento' y 'jornadas':\n")
+df.select('nombreestablecimiento', 'jornadas').distinct().show(truncate=False)
 
-# Convertir columnas numéricas relevantes a tipo adecuado
-#df = df.withColumn("AÑO", F.col("AÑO").cast("int")) \
- #      .withColumn("INDICE", F.col("INDICE").cast("float")) \
-  #     .withColumn("POBLACIÓN_DANE", F.col("POBLACIÓN_DANE").cast("int"))
+# 6. Conteo de las diferentes 'zonas'
+print("Conteo de las diferentes 'zonas':\n")
+df.groupBy('zona').count().show()
 
-# Confirmar que las columnas han sido convertidas correctamente
-df.printSchema()
+# 7. Conteo de 'secretaria' y número total de establecimientos por secretaria
+print("Conteo de establecimientos por secretaria:\n")
+df.groupBy('secretaria').count().orderBy('count', ascending=False).show()
 
-# Descartar filas con valores nulos en columnas clave
-df = df.dropna(subset=["AÑO", "INDICE", "POBLACIÓN_DANE"])
-# Muestra las primeras filas del DataFrame
-df.show()
+# 8. Conteo de 'tipo_Establecimiento' por 'zona'
+print("Conteo de 'tipo_Establecimiento' por 'zona':\n")
+df.groupBy('zona', 'tipo_Establecimiento').count().show()
 
+# 9. Conteo de instituciones por 'estrato_Socio_Economico'
+print("Conteo de instituciones por 'estrato_Socio_Economico':\n")
+df.groupBy('estrato_Socio_Economico').count().show()
 
-# 3. Análisis Exploratorio de Datos (EDA)
+# 10. Media de 'matricula_Contratada' por 'tipo_Establecimiento'
+print("Media de 'matricula_Contratada' por 'tipo_Establecimiento':\n")
+df.groupBy('tipo_Establecimiento').agg(F.avg('matricula_Contratada').alias('media_matricula')).show()
 
-# Distribución de Penetración por Municipio
+# 11. Conteo de 'genero' por 'secretaria'
+print("Conteo de 'genero' por 'secretaria':\n")
+df.groupBy('secretaria', 'genero').count().show()
 
-# Filtrar datos para el último año disponible (ejemplo: 2023)
-df_2023 = df.filter(F.col("AÑO") == 2023)
+# 12. Total de instituciones por 'nombre_Rector'
+print("Total de instituciones por 'nombre_Rector':\n")
+df.groupBy('nombre_Rector').count().orderBy('count', ascending=False).show(10)
 
-#Calcular estadísticos descriptivos del índice de penetración
-df_2023.describe("INDICE").show()
+# 13. Conteo de 'etnias' por 'zona'
+print("Conteo de 'etnias' por 'zona':\n")
+df.groupBy('zona', 'etnias').count().show(truncate=False)
 
-# Filtrar municipios con baja penetración (por ejemplo, índice menor a 5%)
-baja_conectividad = df_2023.filter(F.col("INDICE") < 5)
-baja_conectividad.show()
-
-# Correlación entre Población y Conectividad
-
-# Calcular correlación entre población y nivel de penetración
-correlacion = df_2023.stat.corr("POBLACIÓN_DANE", "INDICE")
-print(f"Correlación entre población y nivel de penetración: {correlacion}")
-
-
-# 4. Identificación de Municipios Prioritarios
-
-# Definir umbrales: Baja penetración (< 5%) y alta población (> 50,000)
-prioritarios = df_2023.filter((F.col("INDICE") < 5) & (F.col("POBLACIÓN_DANE") > 50000))
-
-# Mostrar los municipios prioritarios
-prioritarios.select("DEPARTAMENTO", "MUNICIPIO", "POBLACIÓN_DANE", "INDICE").show()
-
-
-# 5. Visualización de Resultados
-
-# Convertir a Pandas para visualización
-prioritarios_pd = prioritarios.toPandas()
-# Graficar
-import matplotlib.pyplot as plt
-
-plt.figure(figsize=(10, 6))
-plt.bar(prioritarios_pd["MUNICIPIO"], prioritarios_pd["INDICE"], color="orange")
-plt.xticks(rotation=90)
-plt.xlabel("Municipio")
-plt.ylabel("Índice de Penetración")
-plt.title("Municipios con Baja Penetración de Internet")
-plt.show()
